@@ -430,3 +430,16 @@ ios-sweet 패치를 적용한 트리(`xnu-8796.141.3` + 0001–0081 + 1000)를 �
   - 실패한 명령: `str w9, [x8, #0x80]!` = `GICR_IGROUPR0`(SGI 프레임 +0x10080)에 쓰는 **pre-index writeback store**
   - **원인 (추정, 근거 강함):** Gunyah는 GIC 접근을 stage-2에서 트랩해 에뮬레이션함. writeback/pair 형식은 `ESR_EL2.ISV=0`이라 하이퍼바이저가 해독하지 못하고 external abort를 주입함 (KVM과 같은 제약). M3의 shim은 같은 레지스터를 단순 store로 썼기 때문에 성공함
 - **수정 1004:** `pe_fiq.c`의 `_gic_read32/_gic_read64/_gic_write32`를 단순 `ldr`/`str` 인라인 asm으로 바꿈 (Linux `__raw_*`와 같은 방식)
+
+### 2026-11-21 — 로컬 빌드 (Xcode 27 beta) ✅
+
+- `tools/xnu-local.sh [marble|sweet] [--quick]`: CI와 같은 레시피를 `build-local/dxb-<board>/`(gitignore)에서 실행함
+  - KDK 13.5(22G74)는 dortania 미러에서 받아 SHA256을 확인함 (659 MB). `pkgutil --expand-full`로 sudo 없이 `build-local/KDK_13.5_22G74.kdk`에 풀고 `KDKROOT`로 지정
+- **Xcode 27.0 beta (27A5194q)로 전체 빌드 성공: 8분 14초, 컴파일 오류 0건**
+  - 1000–1004 패치 모두 적용됨. 1000(iig 호환)이 Xcode 27에서도 충분함
+  - 커널 16,687,352 B (CI의 Xcode 16.4 빌드는 16,687,776 B)
+  - QEMU marble 레이아웃에서 CI 커널과 같은 지점(루트 대기)까지 부팅됨
+- `--quick`: 그 사이 추가된 marble 패치만 적용하고 커널 make만 다시 실행함
+  - build.sh의 "kernel.development가 이미 있으면 건너뜀" 조건을 끄도록 처리함
+  - `pe_fiq.c` 하나를 바꾼 뒤 **12.2초**에 끝남 (CI는 약 10분)
+- 앞으로의 흐름: 로컬에서 `--quick`으로 반복 → 폰 테스트. CI는 깨끗한 환경의 기준 빌드와 공개 아티팩트 용도로 유지
