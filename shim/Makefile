@@ -118,7 +118,7 @@ $(OUT)/marble-shim-v2.img: $(OUT)/Image ../tools/mkbootimg_shim.py FORCE
 # ADT from tools/mkadt_marble.py; payload from ios-sweet's mkpayload.py
 # (SWEETXNU, phys_base/mem_size taken from the ADT's /chosen dram-base/size).
 XNU_KERNEL  ?=
-XNU_CMDLINE ?= debug=0xc serial=3 cpus=1 keepsyms=1 sweettouch=0 sweetkeys=0
+XNU_CMDLINE ?= debug=0xc serial=3 cpus=8 keepsyms=1 sweettouch=0 sweetkeys=0
 SWEET_TOOLS := ../third_party/ios-sweet/tools
 .PHONY: xnu
 xnu: $(OUT)/marble-shim-xnu-v4.img

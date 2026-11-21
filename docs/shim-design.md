@@ -455,3 +455,15 @@ ios-sweet 패치를 적용한 트리(`xnu-8796.141.3` + 0001–0081 + 1000)를 �
   - **`Waiting on <dict>… IOProviderClass IOMedia … Apple_HFS`**: 루트 디바이스 대기. UFS 노드를 빼 두었으므로 예상된 정지점
   - 새로 보인 줄: `Failed to write boot-picker-bringup-reason to NVRAM` (NVRAM이 없어서 생김, 무해)
 - 결론: **SM7475 + Gunyah 위에서 XNU 커널 초기화가 끝까지 됨.** 남은 일은 루트 파일시스템과 그 이후 (M5b-3)
+
+### 2026-11-21 — SMP: **8코어 모두 XNU에서 동작** ✅
+
+- 같은 1004 커널에서 cmdline만 `cpus=8`로 바꿈 (`shim/Makefile`의 `XNU_CMDLINE` 기본값도 `cpus=8`로 변경)
+- `SWEET CPU: requested=8 selected=8 (limit=8)`
+- cpu1–7: `CPU_ON target=0x100…0x700 entry_pa=0x841482000 context=N` → `PSCI CPU_ON rc=0` → `mpidr=0xN00 came alive; SGI1 OK`
+- **`SWEET CPU: 8/8 CPUs initialized, SGI1 verified`**, `mcache: 8 CPU(s), 64 bytes CPU cache line size`
+- 커널 쪽 추가 변경 없이 성공함. 이유는 다음과 같음:
+  - XNU reset vector가 MPIDR `& 0xFFFF`로 CPU 데이터를 찾으므로 MT 비트(24)와 무관함
+  - 각 코어의 재분배기는 1002, 타이머 초기화는 1003, GIC 접근은 1004로 처리됨
+- 같은 지점(`Waiting on … Apple_HFS`)에서 정지. 이 커널은 A510/A710/X2를 하나의 동질(SMP) 클러스터로 다룸 (P/E 구분 없음)
+- 그 외 로그: `Log queues configured: slot count: 64` (CPU 수에 비례), zone map (VM 19G, DATA 25G 등)
