@@ -375,3 +375,22 @@ M2에서 **16K granule 미지원**이 나오면 큰 문제임. hackiosx 포팅 �
   - SWEET platform expert, AMFI, AKS, WDT, IOSurface, HID, AppleCLCD(1080×2400 stride 4320 at `0x9c000000`), `SWEET CPU: cpu=0 ... SGI1 OK`, HFS, BSD 네트워크 스택
   - 마지막 줄 `Waiting on <dict>... IOMedia ... Apple_HFS`: 루트 디바이스를 기다리며 멈춤. QEMU에는 UFS나 램디스크가 없으므로 예상된 동작
 - 결론: **우리 shim의 payload 탐지, 복사, ADT, boot_args 핸드오프가 실제 XNU에서 동작함** (ios-sweet 형식과 호환 확인). 남은 일은 커널과 ADT를 marble에 맞추는 것 (§12 M5b-2)
+
+### 2026-11-21 — M5b-1 빌드 파이프라인 (GitHub Actions)
+
+- 공개 저장소 https://github.com/oscar-jung/marble-ios 를 만들고 push함
+- 첫 run이 2초 만에 취소됨: `The configuration 'macos-14-arm64-us-default' is not supported` → GitHub가 macos-14 이미지를 종료함
+- 조사용 워크플로 `probe-runners.yml` 결과:
+  - macos-15 (arm64/intel): Xcode 16.0–16.4, 26.0.1–26.3
+  - macos-26: Xcode 26.0.1–26.6
+  - **Xcode 15가 들어 있는 이미지는 없음**
+- 대응: macos-15 + Xcode 16.4 + 호환 패치 `xnu/marble-patches/1000-xcode16-iig-kernelcontent.patch`
+  - 패치 내용: xnu-11215에 있는 `IORPC.kernelContent` 필드를 xnu-8796.141.3에 추가하고, `IOUserServer`가 IORPC를 만드는 두 곳에서 그 필드를 채움
+  - xnu-8796.141.3에 `git apply --check` 통과 확인
+- run 44869356182 진행 중 (`make -k`로 오류를 한 번에 수집)
+- **run 44869356182 ✅ (8분 4초):** Xcode 16.4 (16F6), MacOSX15.5 SDK, xnu-8796.141.3
+  - ios-sweet 패치 81개와 `1000` 패치가 모두 적용됨. 건너뛴 것은 blacktop의 다른 macOS 버전용 패치 4개뿐 (ios-sweet CI에서도 같음)
+  - 실제 컴파일 오류 0건. 로그에서 `error` 문자열로 잡힌 53곳은 모두 소스 안의 printf 문구임
+  - 산출물 `kernel.development.sweet` (Mach-O arm64, 16.7 MB, SHA256 일치)
+- **우리가 빌드한 커널을 QEMU에서 shim으로 부팅 ✅** (`docs/m5b1-qemu-ours-060.png`): 도구는 `45263be`의 `mkadt.py --qemu`와 `mkpayload.py`. upstream 아티팩트와 같은 지점(`Waiting on ... Apple_HFS`)까지 진행함. `iBoot Stage 2 version: sweet-shim` 표시
+- **M5b-1 완료:** Xcode 15 없이도 xnu-8796 + sweet 패치를 빌드하는 파이프라인이 동작함. 다음은 M5b-2 (MARBLE config 패치 `1001~`, marble ADT)
