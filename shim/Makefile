@@ -113,6 +113,25 @@ $(OUT)/marble-shim-v2.img: $(OUT)/Image ../tools/mkbootimg_shim.py FORCE
 	$(PYTHON) -I ../tools/mkbootimg_shim.py --header-version 2 --kernel $(OUT)/Image --dtb $(DTB) \
 		--cmdline "$(CMDLINE)" --os-version $(OS_VER) --os-patch-level $(OS_PATCH) -o $@
 
+# M5b-2: shim + a real XNU payload in the ramdisk (header v4).
+#   make xnu XNU_KERNEL=<kernel.development.sweet built with -DSWEET_BOARD_MARBLE>
+# ADT from tools/mkadt_marble.py; payload from ios-sweet's mkpayload.py
+# (SWEETXNU, phys_base/mem_size taken from the ADT's /chosen dram-base/size).
+XNU_KERNEL  ?=
+XNU_CMDLINE ?= debug=0xc serial=3 cpus=1 keepsyms=1 sweettouch=0 sweetkeys=0
+SWEET_TOOLS := ../third_party/ios-sweet/tools
+.PHONY: xnu
+xnu: $(OUT)/marble-shim-xnu-v4.img
+$(OUT)/marble.adt: ../tools/mkadt_marble.py FORCE | $(OUT)
+	$(PYTHON) -I ../tools/mkadt_marble.py $@
+$(OUT)/xnu-payload.bin: $(OUT)/marble.adt FORCE
+	@if [ -z "$(XNU_KERNEL)" ]; then echo "error: set XNU_KERNEL=<marble-board kernel>" >&2; exit 1; fi
+	$(PYTHON) -I $(SWEET_TOOLS)/mkpayload.py $(XNU_KERNEL) $(OUT)/marble.adt $@ --cmdline "$(XNU_CMDLINE)"
+$(OUT)/marble-shim-xnu-v4.img: $(OUT)/Image $(OUT)/xnu-payload.bin ../tools/mkbootimg_shim.py FORCE
+	$(PYTHON) -I ../tools/mkbootimg_shim.py --header-version 4 --kernel $(OUT)/Image \
+		--ramdisk $(OUT)/xnu-payload.bin --cmdline "$(CMDLINE)" \
+		--os-version $(OS_VER) --os-patch-level $(OS_PATCH) -o $@
+
 # Repack every time: CMDLINE is not a file dependency.
 FORCE:
 

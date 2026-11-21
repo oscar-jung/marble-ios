@@ -412,3 +412,11 @@ ios-sweet 패치를 적용한 트리(`xnu-8796.141.3` + 0001–0081 + 1000)를 �
 - 부트스트랩 매핑: 16K granule에서 L1 엔트리 하나는 64 GiB를 덮음. RAM(`0x840000000`)과 FB(`0xb8000000`)가 모두 L1 index 0이므로 start.s의 "같은 V=P L2 테이블" 가정이 그대로 성립함
 - `tools/mkadt_marble.py`: ios-sweet `mkadt.py`의 상수를 marble 값으로 바꾸고 트리를 조정함 (GIC stride, compatible, `sweet-ufs` 제거). `--qemu`는 RAM `0x100000000`/4G, GICv3 기본값을 씀
 - CI: matrix `sweet` / `marble` (`SWEET_BOARD_FLAGS=-DSWEET_BOARD_MARBLE`)
+- **CI run 44870826985 ✅:** sweet 6분 19초, marble 7분 1초. 두 보드 모두 패치 1000–1003이 적용됐고 오류 0건. marble 빌드에 `-DSWEET_BOARD_MARBLE` 반영됨
+  - 디스어셈블로 확인: `start_first_cpu` 부근의 FB 상수가 sweet는 `movk #0x9c00, lsl #16`, marble은 `movk #0xb800, lsl #16`
+- **QEMU:**
+  - sweet 커널(1002/1003 포함, sweet `--qemu` ADT): 예전과 같은 지점(루트 대기)까지 진행 → 회귀 없음
+  - **marble 커널**(`mkadt_marble.py --qemu`, `QEMU_FB_BASE=0xb8000000`, `-m 8G`, RAM `0x100000000`): `SWEET FB: AppleCLCD 1080x2400 stride 4320 at 0xb8000000`, CPU0 SGI1 OK, 루트 대기까지 진행 ✅ (`docs/m5b2-qemu-marble-045.png`)
+- 폰 이미지: `make xnu XNU_KERNEL=<marble kernel>` → `shim/out/marble/marble-shim-xnu-v4.img` (16.8 MB)
+  - payload `SWEETXNU`, 세그먼트 10개, `phys_base 0x840000000`, `mem 0x13ff00000`
+  - cmdline `debug=0xc serial=3 cpus=1 keepsyms=1 sweettouch=0 sweetkeys=0`
