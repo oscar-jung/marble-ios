@@ -476,3 +476,5 @@ ios-sweet 패치를 적용한 트리(`xnu-8796.141.3` + 0001–0081 + 1000)를 �
 - QEMU (marble 레이아웃, `docs/m5b3-qemu-init-050.png`):
   - `Added memory device md0/rmd0` → `BSD root: md0, major 1, minor 0` → `VM Swap Subsystem is ON`
   - `load_init_program: attempting to load /sbin/launchd` → **`*** SWEET userspace: init running as PID 1 ***`** → `SWEET init: still alive` (5초 간격)
+- **폰 ✅:** 8코어(`8/8 CPUs initialized, SGI1 verified`) → `Added memory device md0/rmd0 (01000000/12000000) at 0xFFFFFE00084D8000` → `BSD root: md0, major 1, minor 0` → `VM Swap Subsystem is ON` → `load_init_program: … /sbin/launchd` → **`*** SWEET userspace: init running as PID 1 ***`** → `SWEET init: still alive`가 5초 간격으로 반복됨 (사진 시점에 5회). panic 없음
+  - → **SM7475(POCO F5)에서 XNU 위의 첫 유저 공간 프로세스가 동작함.** 다음이 모두 실기기에서 확인됨: exec, ad-hoc 코드 서명 검사, syscall(svc #0x80), devfs `/dev/console`, `select` 타임아웃(= vtimer 기반 스케줄링)
