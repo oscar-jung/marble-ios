@@ -1,0 +1,27 @@
+# Which hosted macOS images exist, and which Xcodes they carry.
+# xnu-8796 needs Xcode 15.x's iig (see xnu.yml).
+name: probe-runners
+
+on:
+  workflow_dispatch:
+
+jobs:
+  probe:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-15, macos-15-intel, macos-26, macos-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    steps:
+      - name: Xcodes
+        run: |
+          sw_vers
+          uname -m
+          ls -d /Applications/Xcode*.app || true
+          for x in /Applications/Xcode*.app; do
+            v=$(defaults read "$x/Contents/Info" CFBundleShortVersionString 2>/dev/null || echo ?)
+            echo "$x -> $v"
+          done
+          xcodebuild -version || true
+          df -h / | tail -1
