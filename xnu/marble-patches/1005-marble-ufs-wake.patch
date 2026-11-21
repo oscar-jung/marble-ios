@@ -1,0 +1,27 @@
+diff --git a/bsd/dev/sweet_ufs.c b/bsd/dev/sweet_ufs.c
+index 6b926fe..30519fd 100644
+--- a/bsd/dev/sweet_ufs.c
++++ b/bsd/dev/sweet_ufs.c
+@@ -384,6 +384,22 @@ ufs_take_over_host(void)
+ 		printf("SWEET UFS: host did not take our request list\n");
+ 		return EIO;
+ 	}
++#if defined(SWEET_BOARD_MARBLE)
++	/*
++	 * marble: ABL puts the UFS device to sleep before the handoff; every
++	 * command then ends in CHECK CONDITION with no sense data (shim UFS
++	 * probe, 2026-11-21). START STOP UNIT to the UFS Device well-known LUN
++	 * with POWER CONDITION = ACTIVE wakes it. It writes no data.
++	 */
++	{
++		static const uint8_t ssu[6] = { 0x1b, 0, 0, 0, 0x10, 0 };
++		uint8_t lun = su.lun;
++		su.lun = 0xd0;
++		int err = ufs_scsi(ssu, sizeof(ssu), 0, false);
++		su.lun = lun;
++		printf("SWEET UFS: START STOP UNIT (ACTIVE) to device W-LUN: %d\n", err);
++	}
++#endif
+ 	return 0;
+ }
+ 

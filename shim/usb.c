@@ -104,6 +104,8 @@ static struct {
 	uint32_t events, resets, setups;
 	const char *fail;
 	int reboot;		/* host asked for a reset: done after the status stage */
+	int raw;		/* usb_send() owns the endpoint; console text is dropped */
+	int raw_busy;
 } u;
 
 /* VID 0x1209 / PID 0x0001: pid.codes test ID (not a product), as ios-sweet. */
@@ -185,7 +187,7 @@ static uint32_t string_desc(unsigned idx, uint8_t *out)
 
 static void tx_kick(void)
 {
-	if (!u.configured || u.tx_busy || u.log_sent == u.log_head)
+	if (u.raw || !u.configured || u.tx_busy || u.log_sent == u.log_head)
 		return;
 	if (u.log_head - u.log_sent > LOG_SIZE)	/* overrun: skip what was overwritten */
 		u.log_sent = u.log_head - LOG_SIZE;
@@ -291,6 +293,10 @@ static void event(uint32_t ev)
 	unsigned ep = (ev >> 1) & 0x1f, type = (ev >> 6) & 0xf, status = (ev >> 12) & 0xf;
 
 	if (ep == EP_TX && type == 1) {		/* bulk IN done */
+		if (u.raw_busy) {
+			u.raw_busy = 0;
+			return;
+		}
 		u.log_sent += u.tx_len;
 		u.tx_busy = 0;
 		tx_kick();
@@ -343,6 +349,8 @@ void usb_poll(void)
 /* Console tee: every character drawn on screen also goes to the host. */
 void con_tee(char c)
 {
+	if (u.raw)
+		return;
 	log_ring[u.log_head % LOG_SIZE] = c;
 	u.log_head++;
 }
@@ -350,6 +358,35 @@ void con_tee(char c)
 int usb_configured(void)
 {
 	return u.configured;
+}
+
+/* Poll until everything logged so far has reached the host (or ms passed). */
+void usb_flush(uint32_t ms)
+{
+	uint64_t end = ticks() + rsr("cntfrq_el0") / 1000 * ms;
+
+	while (u.up && u.configured && (u.log_sent != u.log_head || u.tx_busy) && ticks() < end)
+		usb_poll();
+}
+
+/* Raw mode: the bulk IN endpoint carries usb_send() data only. */
+void usb_set_raw(int on)
+{
+	u.raw = on;
+}
+
+/* Send one buffer (zero copy: it must stay put until this returns). 0 = sent. */
+int usb_send(const void *buf, uint32_t len)
+{
+	uint64_t end = ticks() + rsr("cntfrq_el0") * 10;
+
+	if (!u.up || !u.configured || u.tx_busy)
+		return -1;
+	u.raw_busy = 1;
+	start_trb(EP_TX, &trb_tx, buf, len, TRBCTL_NORMAL);
+	while (u.raw_busy && u.configured && ticks() < end)
+		usb_poll();
+	return u.raw_busy ? -1 : 0;
 }
 
 /* Returns 0 when running; otherwise prints why on the console. */
@@ -435,6 +472,9 @@ void usb_stop(void)
 }
 
 #else
+void usb_flush(uint32_t ms) { (void)ms; }
+void usb_set_raw(int on) { (void)on; }
+int usb_send(const void *buf, uint32_t len) { (void)buf; (void)len; return -1; }
 void usb_poll(void) {}
 void con_tee(char c) { (void)c; }
 int usb_start(void) { return -1; }

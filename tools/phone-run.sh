@@ -6,6 +6,7 @@
 #   4. receive the shim's USB log until it has been quiet for QUIET seconds
 #
 #   tools/phone-run.sh IMAGE [NAME] [QUIET]
+#   RECEIVER="tools/usbdump.py OUT" tools/phone-run.sh IMAGE   (any receiver command)
 # Log: build-local/logs/<NAME>.log (default NAME = run-<time>).
 # Needs the image to be built with shim.usb=1. Nothing is flashed.
 set -uo pipefail
@@ -38,7 +39,11 @@ while :; do
 	sleep 2
 done
 
-"$PY" -u "$ROOT/tools/usblog.py" --once --quiet-secs "$QUIET" --wait-secs 90 --out "$LOG" &
+if [ -n "${RECEIVER:-}" ]; then
+	"$PY" -u $RECEIVER &
+else
+	"$PY" -u "$ROOT/tools/usblog.py" --once --quiet-secs "$QUIET" --wait-secs 90 --out "$LOG" &
+fi
 RX=$!
 sleep 1
 timeout 60 fastboot boot "$IMG" 2>&1 | sed 's/^/  /'

@@ -528,3 +528,13 @@ ios-sweet 패치를 적용한 트리(`xnu-8796.141.3` + 0001–0081 + 1000)를 �
   - (a) `userdata`: ios-sweet 방식. 공간은 충분하지만 **Android 데이터가 지워지고**, Android를 다시 쓰려면 포맷이 필요함
   - (b) `cust`: 2 GiB로는 iOS 16 루트 전체(수 GB)에 부족함. 축소한 루트나 시험용으로만 가능
   - (c) GPT를 고쳐 `userdata`를 줄이고 새 파티션을 만드는 방법: 공간 문제는 없지만 파티션 테이블 수정은 위험도가 가장 큼
+
+### 2026-11-21 — cust 백업 (USB 덤프) ✅, UFS 루트 준비
+
+- Android 쪽 확인: `/cust` 마운트 없음, fstab과 init에도 참조 없음 → **포팅 ROM은 cust를 쓰지 않음** (`/dev/block/sda31`)
+- `shim.dump=NAME` + `tools/usbdump.py`: shim이 UFS를 깨운 뒤 GPT에서 파티션을 찾아 256 KiB씩 READ(10) → 복사 없이 USB bulk IN으로 전송
+- **cust 백업:** 2,147,483,648 B, 읽기 오류 0, 55.6 s (**약 38 MB/s**). ext4 `cust`. SHA-256 `487903af91d2e297a61f9838837f98f94ba0f74ca7de3e0cdf47a3d8c5e5b368` → `build-local/backup/cust-original.img` (저장소에는 넣지 않음)
+- shim 이미지가 1 MiB를 넘어 `adr ±1 MiB`를 벗어남 → start.S에서 `adrp`+`:lo12:` 사용
+- **XNU 1005:** `sweet_ufs`가 목록을 넘겨받은 뒤 W-LUN 0xD0에 SSU(ACTIVE)를 보냄 (marble만). 로컬 `--quick` 12초
+- 시험 루트: 64 MiB HFS+ (journal 없음, `SweetRoot`), `/sbin/launchd` = sweet-init, `/dev`
+- `mkadt_marble.py --ufs` (`/sweet-ufs` 유지), `make xnu-ufs UFSROOT=cust` → cmdline `… rd=ufsroot0 ufsroot=cust` (읽기 전용, `ufsrw` 없음)

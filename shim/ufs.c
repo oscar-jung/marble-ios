@@ -77,6 +77,9 @@ static struct utrd utrl[32] __attribute__((aligned(1024)));
 static struct ucd ucd __attribute__((aligned(128)));
 static uint8_t data[2 * BLOCK] __attribute__((aligned(4096)));
 static uint8_t ents[32 * BLOCK] __attribute__((aligned(4096)));	/* up to 1024 GPT entries */
+#define DUMP_CHUNK	(64u * BLOCK)	/* 256 KiB: the most one PRDT entry can describe */
+static uint8_t dump_buf[DUMP_CHUNK] __attribute__((aligned(4096)));
+static int ufs_ready;			/* page_ufs got a good TUR on LUN 0 */
 
 /* Sense data of the last CHECK CONDITION (response UPIU: length at 30, fixed-format data at 32). */
 static uint8_t sense_key, sense_asc, sense_ascq, sense_len;
@@ -239,6 +242,76 @@ static void gpt(uint8_t lun, int show_all)
 	}
 }
 
+/* GPT lookup by name on a LUN: first block and block count (4 KiB). 0 = found. */
+static int gpt_find(uint8_t lun, const char *want, uint64_t *first, uint64_t *count)
+{
+	if (read_blocks(lun, 0, 2, data))
+		return -1;
+	const volatile uint8_t *h = data + BLOCK;
+	if (!(h[0] == 'E' && h[1] == 'F' && h[2] == 'I' && h[3] == ' '))
+		return -1;
+	uint32_t elba = (uint32_t)le64p(h + 72), nent = le32p(h + 80), esz = le32p(h + 84);
+	if (esz != 128 || nent > sizeof(ents) / 128 ||
+	    read_blocks(lun, elba, (nent * 128 + BLOCK - 1) / BLOCK, ents))
+		return -1;
+	for (uint32_t i = 0; i < nent; i++) {
+		const volatile uint8_t *e = ents + i * 128;
+		int c = 0;
+		for (; want[c]; c++)
+			if (e[56 + 2 * c] != (uint8_t)want[c] || e[57 + 2 * c])
+				break;
+		if (want[c] || e[56 + 2 * c])
+			continue;
+		*first = le64p(e + 32);
+		*count = le64p(e + 40) - *first + 1;
+		return 0;
+	}
+	return -1;
+}
+
+void page_ufs(void);
+
+/*
+ * Stream a whole LUN-0 partition to the host over the USB log channel:
+ * a text line "MARBLE-DUMP-BEGIN <name> <bytes>", then exactly <bytes> raw
+ * bytes, then "MARBLE-DUMP-END". Host: tools/usbdump.py. Reads only.
+ */
+void ufs_dump(const char *name)
+{
+	uint64_t first, count;
+
+	page_ufs();
+	if (!ufs_ready || !usb_configured()) {
+		con_printf("DUMP: %s", !ufs_ready ? "UFS NOT READY" : "NO USB HOST");
+		return;
+	}
+	stage = "ufs dump";
+	if (gpt_find(0, name, &first, &count)) {
+		con_printf("DUMP: PARTITION %s NOT FOUND ON LUN0", name);
+		return;
+	}
+	con_printf("DUMP: %s LBA %lX, %lu BLOCKS (%lu MIB)", name, first, count, count >> 8);
+	con_printf("MARBLE-DUMP-BEGIN %s %lu", name, count * BLOCK);
+	usb_flush(5000);
+	usb_set_raw(1);
+	uint64_t t0 = ticks();
+	uint32_t errors = 0;
+	for (uint64_t done = 0; done < count;) {
+		uint32_t n = count - done > 64 ? 64 : (uint32_t)(count - done);
+		if (read_blocks(0, (uint32_t)(first + done), n, dump_buf)) {
+			errors++;
+			zero(dump_buf, n * BLOCK);	/* keep the stream length; reported below */
+		}
+		if (usb_send(dump_buf, n * BLOCK))
+			break;
+		done += n;
+	}
+	usb_set_raw(0);
+	uint64_t ms = (ticks() - t0) / (rsr("cntfrq_el0") / 1000);
+	con_printf("MARBLE-DUMP-END %s READ ERRORS %u, %lu MS (%lu KIB/S)", name, errors, ms,
+		   ms ? (count * BLOCK / 1024) * 1000 / ms : 0);
+}
+
 void page_ufs(void)
 {
 	stage = "ufs regs";
@@ -301,6 +374,8 @@ void page_ufs(void)
 		}
 	}
 
+	ufs_ready = rc == 0;
+
 	stage = "ufs capacity";
 	static const uint8_t cap10[10] = { 0x25 };
 	for (uint8_t lun = 0; lun < MAX_LUN; lun++) {
@@ -325,5 +400,10 @@ void page_ufs(void)
 void page_ufs(void)
 {
 	con_printf("NO UFS ON THIS BOARD");
+}
+
+void ufs_dump(const char *name)
+{
+	(void)name;
 }
 #endif

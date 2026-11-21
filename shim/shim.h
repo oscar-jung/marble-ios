@@ -46,9 +46,13 @@ void usb_wait_host(uint32_t ms);
 void usb_poll(void);
 void usb_stop(void);
 int usb_configured(void);
+void usb_flush(uint32_t ms);
+void usb_set_raw(int on);
+int usb_send(const void *buf, uint32_t len);
 
 /* ufs.c: page 6, read-only UFS probe */
 void page_ufs(void);
+void ufs_dump(const char *name);	/* stream a LUN-0 partition over USB (read only) */
 
 /* loader.c */
 struct fb;

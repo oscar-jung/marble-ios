@@ -26,6 +26,8 @@
  *   shim.fault=1   take a data abort after page 0 (tests the panic screen)
  *   shim.usb=1     start the USB log channel first (tools/usblog.py on the
  *                  host); everything printed is also sent over USB
+ *   shim.dump=NAME with shim.usb=1: stream LUN-0 partition NAME to the host
+ *                  (tools/usbdump.py), read only, then hold
  * The older m0.* spellings are accepted too.
  */
 #include <stdint.h>
@@ -121,6 +123,32 @@ static int arg_digit(const char *key)
 		}
 	}
 	return -1;
+}
+
+/* Value of "key=word" in bootargs (letters, digits, '_'), or 0. */
+static const char *arg_word(const char *key, char *out, uint32_t max)
+{
+	uint32_t n = 0;
+
+	while (key[n])
+		n++;
+	for (uint32_t i = 0; args && i + n < args_len; i++) {
+		uint32_t j = 0;
+		while (j < n && *(volatile char *)(args + i + j) == key[j])
+			j++;
+		if (j != n)
+			continue;
+		uint32_t k = 0;
+		for (; k + 1 < max && i + n + k < args_len; k++) {
+			char c = *(volatile char *)(args + i + n + k);
+			if (!((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_'))
+				break;
+			out[k] = c;
+		}
+		out[k] = 0;
+		return k ? out : 0;
+	}
+	return 0;
 }
 
 static int hold(void)
@@ -432,6 +460,13 @@ void shim_main(uintptr_t fdt, uint64_t el, uintptr_t image_base)
 	}
 
 	int only = arg_digit("shim.page=");
+	char dump_name[24];
+	if (arg_word("shim.dump=", dump_name, sizeof(dump_name))) {
+		page_begin(6, "UFS DUMP", 3);
+		ufs_dump(dump_name);
+		finish(1);
+	}
+
 	uint64_t rd_lo = 0, rd_hi = 0;
 	uintptr_t payload = 0;
 	if (fdt_prop_u64(fdt, "chosen", "linux,initrd-start", &rd_lo) &&

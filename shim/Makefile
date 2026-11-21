@@ -122,8 +122,9 @@ XNU_CMDLINE ?= debug=0xc serial=3 cpus=8 keepsyms=1 sweettouch=0 sweetkeys=0
 SWEET_TOOLS := ../third_party/ios-sweet/tools
 .PHONY: xnu
 xnu: $(OUT)/marble-shim-xnu-v4.img
+ADT_FLAGS ?=
 $(OUT)/marble.adt: ../tools/mkadt_marble.py FORCE | $(OUT)
-	$(PYTHON) -I ../tools/mkadt_marble.py $@
+	$(PYTHON) -I ../tools/mkadt_marble.py $@ $(ADT_FLAGS)
 # XNU_RAMDISK=<image>: appended to the payload as md0 (ADT /chosen/memory-map
 # RAMDisk) and booted with rd=md0. With mockfs the image may be a single static
 # Mach-O, which XNU then runs as /sbin/launchd (see 'xnu-init').
@@ -138,6 +139,11 @@ out/sweet-init: $(SWEET_TOOLS)/sweet-init.S $(SWEET_TOOLS)/mkinit.py
 	mkdir -p out
 	/usr/bin/clang -target arm64-apple-ios16.0 -c $(SWEET_TOOLS)/sweet-init.S -o out/sweet-init.o
 	$(PYTHON) -I $(SWEET_TOOLS)/mkinit.py out/sweet-init.o $@
+.PHONY: xnu-ufs
+# M5b-3b: XNU with its root on a UFS partition (read only), e.g. UFSROOT=cust.
+UFSROOT ?= cust
+xnu-ufs:
+	$(MAKE) xnu ADT_FLAGS=--ufs XNU_CMDLINE="$(XNU_CMDLINE) rd=ufsroot0 ufsroot=$(UFSROOT)"
 .PHONY: xnu-init
 # M5b-3a: XNU + mockfs RAM disk root running sweet-init as PID 1.
 xnu-init: out/sweet-init

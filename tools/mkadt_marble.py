@@ -12,10 +12,12 @@ on the phone in M0-M5a), builds the tree, then adjusts it:
     SweetPlatformExpert matches it)
   - /cpus: kryo compatible kept for SweetCPU matching; reg = MPIDR Aff1
     (0x000-0x700, as on marble)
-  - /sweet-ufs removed: marble's UFS is not brought up yet (root on a ramdisk
-    or none)
+  - /sweet-ufs removed unless --ufs: with it, XNU's sweet_ufs driver (plus
+    xnu/marble-patches/1005, the SSU wake) serves a GPT partition as the
+    root disk (rd=ufsroot0 ufsroot=<name>); the UFS host is at the same
+    0x1d84000 as on sweet
 
-  mkadt_marble.py OUT.adt [--qemu] [--dump]
+  mkadt_marble.py OUT.adt [--qemu] [--ufs] [--dump]
 
 --qemu: QEMU virt instead of the phone (GIC 0x08000000/0x080a0000 with the
 GICv3 default stride, CNTFRQ 62.5 MHz, one CPU, RAM at 0x100000000), for a
@@ -69,7 +71,7 @@ def child(node, name):
     raise KeyError(name)
 
 
-def build(qemu=False):
+def build(qemu=False, ufs=False):
     mkadt.PHYS_BASE, mkadt.MEM_SIZE = (QEMU_PHYS_BASE, QEMU_MEM_SIZE) if qemu else (PHYS_BASE, MEM_SIZE)
     mkadt.GICD, mkadt.GICD_SIZE = GICD, GICD_SIZE
     mkadt.GICR, mkadt.GICR_SIZE = GICR, GICR_SIZE
@@ -83,14 +85,15 @@ def build(qemu=False):
     gic = child(child(root, "arm-io"), "gic")
     if not qemu:
         set_prop(gic, "redistributor-stride", u64(GICR_STRIDE))
-    root.children = [c for c in root.children if c.name != "sweet-ufs"]
+    if not ufs:
+        root.children = [c for c in root.children if c.name != "sweet-ufs"]
     return root
 
 
 def main() -> None:
     if len(sys.argv) < 2 or sys.argv[1].startswith("-"):
         sys.exit(__doc__)
-    root = build(qemu="--qemu" in sys.argv)
+    root = build(qemu="--qemu" in sys.argv, ufs="--ufs" in sys.argv)
     blob = adt.serialize(root)
     open(sys.argv[1], "wb").write(blob)
     if "--dump" in sys.argv:
