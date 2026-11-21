@@ -18,7 +18,8 @@ LD        := $(LLD)/ld.lld
 PYTHON    ?= python3
 
 OUT       := out/$(BOARD)
-BOARD_DEF := $(if $(filter qemu,$(BOARD)),-DBOARD_QEMU,-DBOARD_MARBLE)
+QEMU_FB_BASE ?= 0x9c000000
+BOARD_DEF := $(if $(filter qemu,$(BOARD)),-DBOARD_QEMU -DQEMU_FB=$(QEMU_FB_BASE)UL,-DBOARD_MARBLE)
 
 CFLAGS := --target=aarch64-none-elf -march=armv8-a -O2 -std=gnu11 \
 	-ffreestanding -fno-builtin -nostdlib -fno-pic -fno-pie -fno-jump-tables -fno-strict-aliasing \
@@ -115,7 +116,6 @@ $(OUT)/marble-shim-v2.img: $(OUT)/Image ../tools/mkbootimg_shim.py FORCE
 # Repack every time: CMDLINE is not a file dependency.
 FORCE:
 
-QEMU_FB_BASE := 0x9c000000
 QEMU_FB_SIZE := 10368000
 PAGE         ?= 0
 
@@ -144,12 +144,13 @@ XNU_PAYLOAD ?=
 SECS        ?= 60
 SNAP        ?= 15
 QEMU_CPU    ?= cortex-a76
+QEMU_MEM    ?= 4G
 qemu-xnu:
 	@if [ -z "$(XNU_PAYLOAD)" ]; then echo "error: set XNU_PAYLOAD=<payload>" >&2; exit 1; fi
-	$(MAKE) BOARD=qemu out/qemu/Image
+	$(MAKE) -B BOARD=qemu QEMU_FB_BASE=$(QEMU_FB_BASE) out/qemu/Image
 	( for t in $$(seq $(SNAP) $(SNAP) $(SECS)); do sleep $(SNAP); \
 	    printf 'pmemsave $(QEMU_FB_BASE) $(QEMU_FB_SIZE) out/qemu/xnu-%03d.raw\n' $$t; done; printf 'quit\n' ) | \
-	  qemu-system-aarch64 -M virt,gic-version=3 -cpu $(QEMU_CPU) -smp 1 -m 4G \
+	  qemu-system-aarch64 -M virt,gic-version=3 -cpu $(QEMU_CPU) -smp 1 -m $(QEMU_MEM) \
 	  -nographic -no-reboot -kernel out/qemu/Image -initrd $(XNU_PAYLOAD) \
 	  -append "$(CMDLINE)" -monitor stdio -serial none \
 	  -d int,guest_errors -D out/qemu/xnu-qemu.log >/dev/null

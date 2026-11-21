@@ -1,0 +1,59 @@
+diff --git a/pexpert/arm/pe_fiq.c b/pexpert/arm/pe_fiq.c
+index 6089db9..3362209 100644
+--- a/pexpert/arm/pe_fiq.c
++++ b/pexpert/arm/pe_fiq.c
+@@ -20,6 +20,14 @@ MACHINE_TIMEOUT(gicr_wake_timeout_ns, "gicr-wake-timeout", GICR_WAKE_TIMEOUT_NS,
+ #if defined(SWEET)
+ /* Phone default; QEMU virt wires the architected virtual timer to INTID 27. */
+ SECURITY_READ_ONLY_LATE(uint32_t) sweet_vtimer_intid = SWEET_VTIMER_INTID;
++/*
++ * Distance between redistributors. 0: per frame from GICR_TYPER.VLPIS (two
++ * 64K frames = GICR_PE_SIZE, four with vLPIs, as on GICv4 and on marble's
++ * Gunyah virtual GIC: 0x40000). The ADT can force it with
++ * /arm-io/gic "redistributor-stride".
++ */
++SECURITY_READ_ONLY_LATE(uint64_t) sweet_gicr_stride = 0;
++#define SWEET_GICR_TYPER_VLPIS    0x2
+ #endif
+ 
+ static vm_offset_t gicd_base;
+@@ -56,7 +64,8 @@ find_gicr_pe_base()
+ 	// We only care about aff1 and aff0
+ 	uint32_t phys_id = __builtin_arm_rsr64("MPIDR_EL1") & (MPIDR_AFF1_MASK | MPIDR_AFF0_MASK);
+ 
+-	for (vm_offset_t offset = 0; offset < gicr_size; offset += GICR_PE_SIZE) {
++	vm_offset_t step = GICR_PE_SIZE;
++	for (vm_offset_t offset = 0; offset < gicr_size; offset += step) {
+ 		vm_offset_t gicr_pe_base = gicr_base + offset;
+ 		uint64_t gicr_typer = gicr_read64(GICR_TYPER);
+ 		uint32_t aff_value = (uint32_t) (gicr_typer >> GICR_TYPER_AFFINITY_VALUE_SHIFT) & (MPIDR_AFF1_MASK | MPIDR_AFF0_MASK);
+@@ -68,6 +77,10 @@ find_gicr_pe_base()
+ 		if (gicr_typer & GICR_TYPER_LAST) {
+ 			break;
+ 		}
++#if defined(SWEET)
++		step = sweet_gicr_stride ? (vm_offset_t)sweet_gicr_stride :
++		    ((gicr_typer & SWEET_GICR_TYPER_VLPIS) ? 2 * GICR_PE_SIZE : GICR_PE_SIZE);
++#endif
+ 	}
+ 
+ 	panic("%s: cannot find GICR base for core %u", __func__, ml_get_cpu_number(phys_id));
+@@ -117,6 +130,18 @@ pe_init_fiq()
+ 			sweet_vtimer_intid = intid;
+ 		}
+ 		kprintf("SWEET GIC: virtual timer INTID %u\n", sweet_vtimer_intid);
++		void const *stride_prop;
++		unsigned int stride_size;
++		if (SecureDTGetProperty(entry, "redistributor-stride", &stride_prop, &stride_size) == kSuccess) {
++			uint64_t stride = stride_size == sizeof(uint64_t) ? *(const uint64_t *)stride_prop :
++			    stride_size == sizeof(uint32_t) ? *(const uint32_t *)stride_prop : 0;
++			if (stride == 0 || (stride % GICR_PE_SIZE) != 0) {
++				panic("%s: invalid redistributor-stride (size %u)", __func__, stride_size);
++			}
++			sweet_gicr_stride = stride;
++		}
++		kprintf("SWEET GIC: redistributor stride %s0x%llx\n", sweet_gicr_stride ? "" : "auto (VLPIS), else ",
++		    sweet_gicr_stride ? sweet_gicr_stride : (uint64_t)GICR_PE_SIZE);
+ #endif
+ 
+ 		vm_offset_t soc_base_phys = pe_arm_get_soc_base_phys();

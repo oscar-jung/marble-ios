@@ -40,7 +40,11 @@
  * address as ios-sweet's ADT framebuffer, so its SWEET kernel can be booted
  * through this shim in QEMU (its kernel RAM is 0xb0000000..0xfd000000).
  */
+#ifdef QEMU_FB
+#define FB_DEF_BASE		QEMU_FB	/* make QEMU_FB_BASE=0xb8000000 for a marble-board kernel */
+#else
 #define FB_DEF_BASE		0x9c000000UL
+#endif
 #define FB_REGION_SIZE		0x02b00000UL
 #define FB_DEF_W		1080
 #define FB_DEF_H		2400

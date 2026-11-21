@@ -1,0 +1,22 @@
+diff --git a/osfmk/arm64/machine_routines.c b/osfmk/arm64/machine_routines.c
+index a1f2a91..5a70934 100644
+--- a/osfmk/arm64/machine_routines.c
++++ b/osfmk/arm64/machine_routines.c
+@@ -2273,8 +2273,17 @@ _enable_virtual_timer(void)
+ 	uint64_t cntvctl = CNTV_CTL_EL0_ENABLE; /* One wants to use 32 bits, but "mrs" prefers it this way */
+ 
+ 	__builtin_arm_wsr64("CNTV_CTL_EL0", cntvctl);
++#if !defined(SWEET)
+ 	/* disable the physical timer as a precaution, as its registers reset to architecturally unknown values */
+ 	__builtin_arm_wsr64("CNTP_CTL_EL0", CNTP_CTL_EL0_IMASKED);
++#else
++	/*
++	 * marble: under Gunyah (SM7475) any EL1 access to CNTP_* is trapped and
++	 * answered with an UNDEF (measured by the shim, M3). SWEET only enables
++	 * the virtual timer PPI at the GIC, so the physical timer cannot
++	 * interrupt us whatever its reset state; leave it alone on every board.
++	 */
++#endif
+ }
+ 
+ void

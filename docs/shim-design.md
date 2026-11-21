@@ -394,3 +394,21 @@ M2에서 **16K granule 미지원**이 나오면 큰 문제임. hackiosx 포팅 �
   - 산출물 `kernel.development.sweet` (Mach-O arm64, 16.7 MB, SHA256 일치)
 - **우리가 빌드한 커널을 QEMU에서 shim으로 부팅 ✅** (`docs/m5b1-qemu-ours-060.png`): 도구는 `45263be`의 `mkadt.py --qemu`와 `mkpayload.py`. upstream 아티팩트와 같은 지점(`Waiting on ... Apple_HFS`)까지 진행함. `iBoot Stage 2 version: sweet-shim` 표시
 - **M5b-1 완료:** Xcode 15 없이도 xnu-8796 + sweet 패치를 빌드하는 파이프라인이 동작함. 다음은 M5b-2 (MARBLE config 패치 `1001~`, marble ADT)
+
+### 2026-11-21 — M5b-2 패치와 marble ADT (CI 빌드 대기)
+
+ios-sweet 패치를 적용한 트리(`xnu-8796.141.3` + 0001–0081 + 1000)를 읽어서 SWEET 커널이 sweet 하드웨어를 가정하는 곳을 정리함:
+
+| 가정 | 위치 | marble에서 생기는 문제 | 대응 |
+|---|---|---|---|
+| FB `0x9c000000` | start.s stage-0 표시와 부트스트랩 블록, sweet_early.c, arm_vm_init 별칭 | MPSS/ADSP carve-out에 쓰게 됨 → 첫 명령부터 abort 가능 | **1001** `SWEET_FB_PHYS` (marble `0xb8000000`) |
+| `GICR_PE_SIZE` 0x20000 고정 | pe_fiq.c `find_gicr_pe_base` | Gunyah vGIC는 0x40000 간격 | **1002** VLPIS 또는 ADT `redistributor-stride` |
+| `CNTP_CTL_EL0` 쓰기 | machine_routines.c `_enable_virtual_timer` | Gunyah UNDEF → 모든 코어가 패닉 | **1003** SWEET에서 생략 |
+| SM7150 고정 MMIO | sweet_keys/touch/spmi/rpmh/usb.c | stage-2 fault 가능 | `sweettouch=0 sweetkeys=0`. 배터리와 USB는 기본으로 꺼져 있음 |
+| UFS `/sweet-ufs` | sweet_ufs.c | (컨트롤러는 같은 주소, UFS 3.1) | ADT에서 노드를 빼서 비활성. 나중에 따로 시험 |
+| GIC 2-security | SWEET.h 주석 | Gunyah는 1-security | CTLR `0x13`, IGROUPR0 all-1로 M3에서 동작 확인 → 변경 없음 |
+| CPU MPIDR Aff1 | SweetCPU.cpp | marble도 `0x000–0x700` | 변경 없음 |
+
+- 부트스트랩 매핑: 16K granule에서 L1 엔트리 하나는 64 GiB를 덮음. RAM(`0x840000000`)과 FB(`0xb8000000`)가 모두 L1 index 0이므로 start.s의 "같은 V=P L2 테이블" 가정이 그대로 성립함
+- `tools/mkadt_marble.py`: ios-sweet `mkadt.py`의 상수를 marble 값으로 바꾸고 트리를 조정함 (GIC stride, compatible, `sweet-ufs` 제거). `--qemu`는 RAM `0x100000000`/4G, GICv3 기본값을 씀
+- CI: matrix `sweet` / `marble` (`SWEET_BOARD_FLAGS=-DSWEET_BOARD_MARBLE`)
