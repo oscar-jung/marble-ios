@@ -467,3 +467,12 @@ ios-sweet 패치를 적용한 트리(`xnu-8796.141.3` + 0001–0081 + 1000)를 �
   - 각 코어의 재분배기는 1002, 타이머 초기화는 1003, GIC 접근은 1004로 처리됨
 - 같은 지점(`Waiting on … Apple_HFS`)에서 정지. 이 커널은 A510/A710/X2를 하나의 동질(SMP) 클러스터로 다룸 (P/E 구분 없음)
 - 그 외 로그: `Log queues configured: slot count: 64` (CPU 수에 비례), zone map (VM 19G, DATA 25G 등)
+
+### 2026-11-21 — M5b-3a: 램디스크 루트 + PID 1 (QEMU ✅, 폰 실행 중)
+
+- 방식: ios-sweet의 mockfs 경로. 램디스크 자체가 정적 Mach-O(`sweet-init`, 16.6 KB, ad-hoc 서명)이고, XNU가 이것을 `/sbin/launchd`로 실행함. cmdline에 `rd=md0`
+  - `mkpayload.py --ramdisk`가 커널 뒤 세그먼트로 붙이고 ADT `/chosen/memory-map RAMDisk`를 추가함 (폰: `0x8424d8000`, `0x8000`)
+- `shim/Makefile`: `XNU_RAMDISK=`, `out/sweet-init` (Apple clang `-target arm64-apple-ios16.0` + `mkinit.py`), `make xnu-init XNU_KERNEL=…`
+- QEMU (marble 레이아웃, `docs/m5b3-qemu-init-050.png`):
+  - `Added memory device md0/rmd0` → `BSD root: md0, major 1, minor 0` → `VM Swap Subsystem is ON`
+  - `load_init_program: attempting to load /sbin/launchd` → **`*** SWEET userspace: init running as PID 1 ***`** → `SWEET init: still alive` (5초 간격)

@@ -124,9 +124,24 @@ SWEET_TOOLS := ../third_party/ios-sweet/tools
 xnu: $(OUT)/marble-shim-xnu-v4.img
 $(OUT)/marble.adt: ../tools/mkadt_marble.py FORCE | $(OUT)
 	$(PYTHON) -I ../tools/mkadt_marble.py $@
+# XNU_RAMDISK=<image>: appended to the payload as md0 (ADT /chosen/memory-map
+# RAMDisk) and booted with rd=md0. With mockfs the image may be a single static
+# Mach-O, which XNU then runs as /sbin/launchd (see 'xnu-init').
+XNU_RAMDISK ?=
 $(OUT)/xnu-payload.bin: $(OUT)/marble.adt FORCE
 	@if [ -z "$(XNU_KERNEL)" ]; then echo "error: set XNU_KERNEL=<marble-board kernel>" >&2; exit 1; fi
-	$(PYTHON) -I $(SWEET_TOOLS)/mkpayload.py $(XNU_KERNEL) $(OUT)/marble.adt $@ --cmdline "$(XNU_CMDLINE)"
+	$(PYTHON) -I $(SWEET_TOOLS)/mkpayload.py $(XNU_KERNEL) $(OUT)/marble.adt $@ \
+		--cmdline "$(XNU_CMDLINE)$(if $(XNU_RAMDISK), rd=md0)" $(if $(XNU_RAMDISK),--ramdisk $(XNU_RAMDISK))
+
+# ios-sweet's first userspace program (PID 1 hello + 5 s heartbeat), as a static ad-hoc signed Mach-O.
+out/sweet-init: $(SWEET_TOOLS)/sweet-init.S $(SWEET_TOOLS)/mkinit.py
+	mkdir -p out
+	/usr/bin/clang -target arm64-apple-ios16.0 -c $(SWEET_TOOLS)/sweet-init.S -o out/sweet-init.o
+	$(PYTHON) -I $(SWEET_TOOLS)/mkinit.py out/sweet-init.o $@
+.PHONY: xnu-init
+# M5b-3a: XNU + mockfs RAM disk root running sweet-init as PID 1.
+xnu-init: out/sweet-init
+	$(MAKE) xnu XNU_RAMDISK=out/sweet-init
 $(OUT)/marble-shim-xnu-v4.img: $(OUT)/Image $(OUT)/xnu-payload.bin ../tools/mkbootimg_shim.py FORCE
 	$(PYTHON) -I ../tools/mkbootimg_shim.py --header-version 4 --kernel $(OUT)/Image \
 		--ramdisk $(OUT)/xnu-payload.bin --cmdline "$(CMDLINE)" \
