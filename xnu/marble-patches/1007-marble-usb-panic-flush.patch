@@ -1,0 +1,152 @@
+diff --git a/bsd/dev/sweet_usb.c b/bsd/dev/sweet_usb.c
+index 59646db..ce9c8c3 100644
+--- a/bsd/dev/sweet_usb.c
++++ b/bsd/dev/sweet_usb.c
+@@ -42,6 +42,7 @@ void sweet_usb_probe(void);
+ static void sweet_usb_gadget_start(vm_offset_t dwc);
+ static bool sweet_usb_logmode;   /* sweetusb=3 */
+ extern uint32_t sweet_log_copy(uint64_t *pos, char *out, uint32_t max);
++extern void sweet_log_append(const char *c, int size);
+ extern ppnum_t pmap_find_phys(pmap_t pmap, addr64_t va);
+ 
+ #define GCC_PA                  0x00100000
+@@ -273,6 +274,7 @@ static struct {
+ 	bool        logmode;
+ 	uint64_t    logpos;
+ 	uint32_t    reboot;     /* >0: vendor reboot requested, ms waited */
++	volatile bool panic;    /* sweet_usb_panic_flush() owns the controller */
+ } ud;
+ 
+ static inline void
+@@ -857,11 +859,11 @@ ud_event(uint32_t ev)
+ 	}
+ }
+ 
++/* One polling pass: controller events, reboot request, log pump. Never sleeps. */
+ static void
+-ud_thread(void *arg __unused, wait_result_t wr __unused)
++ud_service(uint32_t *ticks)
+ {
+-	uint32_t ticks = 0;
+-	for (;;) {
++	{
+ 		uint32_t count = dwc_rd(GEVNTCOUNT) & 0xffff;
+ 		if (count) {
+ 			ud_sync(UD_EVT, UD_EVT_SIZE);
+@@ -893,13 +895,82 @@ ud_thread(void *arg __unused, wait_result_t wr __unused)
+ 					ud_start_trb(EP_TX, UD_TRB_TX, UD_TX, n, TRBCTL_NORMAL);
+ 				}
+ 			}
+-		} else if ((++ticks % 30000) == 0) {
++		} else if ((++*ticks % 30000) == 0) {
+ 			printf("SWEET USB: ue0 rx %llu tx %llu frames\n", ud.rx_frames, ud.tx_frames);
+ 		}
++	}
++}
++
++static void
++ud_thread(void *arg __unused, wait_result_t wr __unused)
++{
++	uint32_t ticks = 0;
++	uint32_t test_panic = 0;     /* sweetusbpanic=N: panic N s after the host configured us */
++	uint32_t configured_ms = 0;
++
++	PE_parse_boot_argn("sweetusbpanic", &test_panic, sizeof(test_panic));
++	for (;;) {
++		if (ud.panic) {
++			/* the panicking CPU drives the controller now */
++			(void)assert_wait(&ud.panic, THREAD_UNINT);
++			thread_block(THREAD_CONTINUE_NULL);
++			continue;
++		}
++		ud_service(&ticks);
++		if (test_panic && ud.configured && ++configured_ms >= test_panic * 1000) {
++			panic("SWEET USB: test panic (sweetusbpanic=%u)", test_panic);
++		}
+ 		ud_sleep_ms(1);
+ 	}
+ }
+ 
++/*
++ * Panic: the USB thread no longer runs, so stream the rest of the console
++ * ring (the panic report) from here, polling the controller, and keep doing
++ * so - answering the host and its reboot request - for good. Returns only if
++ * no host has configured the log device within 3 s. Called from
++ * panic_spin_forever() and before the panic restart (osfmk/kern/debug.c).
++ */
++void sweet_usb_panic_flush(void);
++
++void
++sweet_usb_panic_flush(void)
++{
++	static bool entered;
++	uint32_t ticks = 0;
++
++	if (!ud.logmode || !ud.dma || entered) {
++		return;
++	}
++	entered = true;
++	ud.panic = true;
++	__asm__ volatile ("dsb sy" ::: "memory");
++	/* The panic report (registers, backtraces, ...) goes to the panic log
++	 * buffer, not the console: send it after the console text. */
++	extern char *debug_buf_base, *debug_buf_ptr;
++	if (debug_buf_base && debug_buf_ptr > debug_buf_base) {
++		static const char b[] = "\n===== SWEET USB: panic log buffer =====\n";
++		static const char e[] = "\n===== SWEET USB: end of panic log; usblog.py --reboot resets =====\n";
++		sweet_log_append(b, sizeof(b) - 1);
++		/* text only: the binary panic stackshot (kcdata) follows it */
++		int len = (int)strnlen(debug_buf_base, (size_t)(debug_buf_ptr - debug_buf_base));
++		sweet_log_append(debug_buf_base, len);
++		sweet_log_append(e, sizeof(e) - 1);
++	}
++	uint64_t start = mach_absolute_time(), ms_abs;
++	nanoseconds_to_absolutetime(NSEC_PER_MSEC, &ms_abs);
++	uint64_t next = start;
++	for (;;) {
++		ud_service(&ticks);
++		if (!ud.configured && mach_absolute_time() - start > 3000 * ms_abs) {
++			return;
++		}
++		next += ms_abs;      /* ~1 ms per pass: the reboot request counts passes */
++		while (mach_absolute_time() < next) {
++		}
++	}
++}
++
+ /*
+  * Live console log over USB Ethernet: every 100 ms the new bytes of the
+  * console ring (bsd/dev/sweet_ufs.c) go as UDP datagrams to
+diff --git a/osfmk/kern/debug.c b/osfmk/kern/debug.c
+index 437adb1..e0f21d3 100644
+--- a/osfmk/kern/debug.c
++++ b/osfmk/kern/debug.c
+@@ -1155,9 +1155,16 @@ panic_trap_to_debugger(const char *panic_format_str, va_list *panic_args, unsign
+ 	__builtin_unreachable();
+ }
+ 
++#if defined(ARM64_BOARD_CONFIG_SWEET)
++extern void sweet_usb_panic_flush(void);    /* bsd/dev/sweet_usb.c: USB log (marble) */
++#endif
++
+ void
+ panic_spin_forever(void)
+ {
++#if defined(ARM64_BOARD_CONFIG_SWEET)
++	sweet_usb_panic_flush();
++#endif
+ 	for (;;) {
+ #if defined(__arm__) || defined(__arm64__)
+ 		/* On arm32, which doesn't have a WFE timeout, this may not return.  But that should be OK on this path. */
+@@ -1171,6 +1178,11 @@ panic_spin_forever(void)
+ static void
+ kdp_machine_reboot_type(unsigned int type, uint64_t debugger_flags)
+ {
++#if defined(ARM64_BOARD_CONFIG_SWEET)
++	if (type == kPEPanicRestartCPU) {
++		sweet_usb_panic_flush();
++	}
++#endif
+ 	if ((type == kPEPanicRestartCPU) && (debugger_flags & DEBUGGER_OPTION_SKIP_PANICEND_CALLOUTS)) {
+ 		PEHaltRestart(kPEPanicRestartCPUNoCallouts);
+ 	} else {

@@ -556,5 +556,12 @@ ios-sweet 패치를 적용한 트리(`xnu-8796.141.3` + 0001–0081 + 1000)를 �
 - XNU 기본 cmdline `sweetusb=3`: shim이 핸드오프 직전 USB를 끊고, XNU가 `IOFindBSDRoot` 앞에서 같은 DWC3를 다시 올려 "marble xnu log"로 재접속
 - `SESSIONS=2 tools/phone-run.sh …`: 세션 1 = shim 로그, 세션 2 = XNU 로그. XNU 링 버퍼를 부팅 처음부터 전송 → 첫 줄 `Darwin Kernel Version 22.6.0 … xnu-8796.141.3`부터 UFS SSU, `BSD root: ufsroot0`, PID 1 heartbeat, SMP 샘플까지 텍스트로 수신
 - `tools/usblog.py --reboot`이 XNU에서도 동작 (vendor 'R' → PSCI SYSTEM_RESET) → Android 18초 만에 복귀. **사진 없이 완전 무인 사이클 가능**
-- 남은 것: 패닉 시점 로그 (패닉 경로에서 USB 스레드가 멈춤 → 동기 flush 필요)
+- 패닉 로그: 다음 항목 (1007)
+
+### 2026-11-21 — XNU 패닉 로그 USB 전송 ✅ (patch 1007, `build-local/logs/xnu-panic-3.log`)
+
+- 패닉 후 `panic_spin_forever()`(그리고 패닉 재부팅 직전)에서 `sweet_usb_panic_flush()`: 패닉한 CPU가 DWC3를 직접 폴링하면서 콘솔 링 나머지 + 패닉 로그 버퍼 텍스트(레지스터, 코어별 PC, 백트레이스)를 전송. 바이너리 stackshot은 제외
+- 1차: 콘솔 텍스트만 옴 (백트레이스는 패닉 로그 버퍼에만 있음) → 버퍼 추가. 2차: stackshot 바이너리까지 붙음 → 첫 NUL에서 자름. 3차 정상
+- 시험: `sweetusbpanic=5` (호스트 연결 5초 후 강제 패닉) → 패닉 리포트 전체 수신, 이어서 `usblog.py --reboot` → Android 50초 만에 복귀
+- debug=0xc에서 패닉 흐름: `panic_spin_shmcon` ("handshake structure not initialized") → `panic_spin_forever` → flush 루프
 
