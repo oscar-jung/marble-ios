@@ -27,7 +27,7 @@ CFLAGS := --target=aarch64-none-elf -march=armv8-a -O2 -std=gnu11 \
 	-fno-asynchronous-unwind-tables -fno-unwind-tables \
 	-Wall -Wextra -Werror $(BOARD_DEF)
 
-SRCS := start.S main.c console.c fdt.c smp.c gic.c loader.c libc.c
+SRCS := start.S main.c console.c fdt.c smp.c gic.c loader.c ufs.c libc.c
 OBJS := $(patsubst %,$(OUT)/%.o,$(basename $(SRCS)))
 
 # M5a test kernel (tk.c): a stand-in for XNU, packed as a payload in the ramdisk.

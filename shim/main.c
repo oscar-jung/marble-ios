@@ -19,7 +19,7 @@
  *
  * Boot image cmdline options:
  *   shim.hold=1    never reset; stay on the last page
- *   shim.page=N    run only page N (0-4), then hold
+ *   shim.page=N    run only page N (0-4, or 6: read-only UFS probe), then hold
  *   shim.diag=1    with a payload: run pages 0-4 before the handoff
  *   shim.mdp=1     (page 0) read the MDP source pipes to find the scanout
  *                  surface; can hang the bus if MDP clocks are gated
@@ -397,6 +397,11 @@ static void run_page(int n, uintptr_t fdt, uintptr_t image_base)
 		page_gic();
 		page_end();
 		break;
+	case 6:
+		page_begin(6, "UFS READ-ONLY PROBE", 3);
+		page_ufs();
+		page_end();
+		break;
 	}
 }
 
@@ -426,7 +431,7 @@ void shim_main(uintptr_t fdt, uint64_t el, uintptr_t image_base)
 		payload = payload_find(rd_lo, rd_hi);
 	}
 
-	if (only >= 0 && only < NUM_PAGES - 1) {
+	if ((only >= 0 && only < NUM_PAGES - 1) || only == 6) {
 		run_page(only, fdt, image_base);
 		if (only == 4) {
 			delay_ms((uint64_t)PAGE_S * 1000);

@@ -478,3 +478,15 @@ ios-sweet 패치를 적용한 트리(`xnu-8796.141.3` + 0001–0081 + 1000)를 �
   - `load_init_program: attempting to load /sbin/launchd` → **`*** SWEET userspace: init running as PID 1 ***`** → `SWEET init: still alive` (5초 간격)
 - **폰 ✅:** 8코어(`8/8 CPUs initialized, SGI1 verified`) → `Added memory device md0/rmd0 (01000000/12000000) at 0xFFFFFE00084D8000` → `BSD root: md0, major 1, minor 0` → `VM Swap Subsystem is ON` → `load_init_program: … /sbin/launchd` → **`*** SWEET userspace: init running as PID 1 ***`** → `SWEET init: still alive`가 5초 간격으로 반복됨 (사진 시점에 5회). panic 없음
   - → **SM7475(POCO F5)에서 XNU 위의 첫 유저 공간 프로세스가 동작함.** 다음이 모두 실기기에서 확인됨: exec, ad-hoc 코드 서명 검사, syscall(svc #0x80), devfs `/dev/console`, `select` 타임아웃(= vtimer 기반 스케줄링)
+
+### 2026-11-21 — UFS 읽기 전용 프로브 #1 (shim 페이지 6)
+
+- 이미지: `make CMDLINE="shim.page=6 shim.hold=1"` (`shim/ufs.c`, ios-sweet shim/ufs.c를 가져와 고친 것, SCSI WRITE 없음)
+- 레지스터 (ABL이 넘긴 상태):
+  - UFSHCI `0x1D84000` **VER 3.0**, CAP `0x1587031F` → NUTRS 32, **64-bit DMA YES**
+  - HCE 1, HCS `0x10F` (DP, UTRLRDY, UTMRLRDY, UCRDY 모두 1, UPMCRS=1), IS `0x400`, RSR 1
+  - ABL의 UTRL은 `0xFF130000`. 진행 중인 요청 없음 (DBR 0)
+- **요청 목록 넘겨받기 성공** (`OUR UTRL AT A800A000, RSR 1`), 명령이 실행되고 응답 UPIU도 돌아옴 (OCS 0)
+- **하지만 모든 명령이 SCSI `CHECK CONDITION`(status 2)**: TUR 3회, LUN0–7 READ CAPACITY, LUN0 READ(10) 모두
+  - unit attention이라면 첫 명령 뒤에 풀려야 함. 계속 유지되므로 장치가 **NOT READY 상태**일 가능성이 큼 (⚠️ 추정: ABL이 핸드오프 전에 START STOP UNIT으로 장치를 재웠거나, 전원 모드가 바뀌었을 수 있음)
+  - 다음: 응답 UPIU의 sense data(key/ASC/ASCQ)를 표시하고, 원인이 NOT READY이면 UFS Device W-LUN(0xD0)에 START STOP UNIT(START=1, power condition ACTIVE)을 보냄. 이 명령은 전원 상태만 바꾸고 데이터는 쓰지 않음

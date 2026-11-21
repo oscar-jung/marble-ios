@@ -40,6 +40,9 @@ void gic_irq(void);
 /* Interrupts off at the GIC and the core, timers stopped: state handed to the next stage. */
 void gic_quiesce(void);
 
+/* ufs.c: page 6, read-only UFS probe */
+void page_ufs(void);
+
 /* loader.c */
 struct fb;
 uintptr_t payload_find(uintptr_t lo, uintptr_t hi);
