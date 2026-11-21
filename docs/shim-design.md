@@ -420,3 +420,13 @@ ios-sweet 패치를 적용한 트리(`xnu-8796.141.3` + 0001–0081 + 1000)를 �
 - 폰 이미지: `make xnu XNU_KERNEL=<marble kernel>` → `shim/out/marble/marble-shim-xnu-v4.img` (16.8 MB)
   - payload `SWEETXNU`, 세그먼트 10개, `phys_base 0x840000000`, `mem 0x13ff00000`
   - cmdline `debug=0xc serial=3 cpus=1 keepsyms=1 sweettouch=0 sweetkeys=0`
+
+### 2026-11-21 — M5b-2 실기기 #1: XNU 실행, GIC 접근에서 panic
+
+- shim 페이지 5: payload `0xB70161F3`(initrd +0xC181F3) `SWEETXNU`, 세그먼트 10개를 `0x841004000~`에 복사 (987 ms). ADT `0x8424D8000`, boot_args `0x8424DC000`, `JUMP TO 0x841480488` ✅
+- **XNU가 폰에서 실행됨:** MMU on, sweet_early 콘솔(`0xb8000000`)에 panic 화면 출력. 커널 진입, 부트스트랩 매핑, FB 별칭은 모두 동작함
+- panic: `Kernel data abort at pc _pe_init_fiq+0x254`, `esr 0x96000010` (현재 EL 데이터 abort, DFSC 0x10 = synchronous external abort), `far 0xfffffe000d604080`. 이후 nested panic 5회 → stall
+  - `find_gicr_pe_base`는 성공 (x19 = 재분배기 0, 1002의 stride 동작). WAKER 처리도 통과
+  - 실패한 명령: `str w9, [x8, #0x80]!` = `GICR_IGROUPR0`(SGI 프레임 +0x10080)에 쓰는 **pre-index writeback store**
+  - **원인 (추정, 근거 강함):** Gunyah는 GIC 접근을 stage-2에서 트랩해 에뮬레이션함. writeback/pair 형식은 `ESR_EL2.ISV=0`이라 하이퍼바이저가 해독하지 못하고 external abort를 주입함 (KVM과 같은 제약). M3의 shim은 같은 레지스터를 단순 store로 썼기 때문에 성공함
+- **수정 1004:** `pe_fiq.c`의 `_gic_read32/_gic_read64/_gic_write32`를 단순 `ldr`/`str` 인라인 asm으로 바꿈 (Linux `__raw_*`와 같은 방식)
