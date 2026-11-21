@@ -538,3 +538,15 @@ ios-sweet 패치를 적용한 트리(`xnu-8796.141.3` + 0001–0081 + 1000)를 �
 - **XNU 1005:** `sweet_ufs`가 목록을 넘겨받은 뒤 W-LUN 0xD0에 SSU(ACTIVE)를 보냄 (marble만). 로컬 `--quick` 12초
 - 시험 루트: 64 MiB HFS+ (journal 없음, `SweetRoot`), `/sbin/launchd` = sweet-init, `/dev`
 - `mkadt_marble.py --ufs` (`/sweet-ufs` 유지), `make xnu-ufs UFSROOT=cust` → cmdline `… rd=ufsroot0 ufsroot=cust` (읽기 전용, `ufsrw` 없음)
+
+### 2026-11-21 — M5b-3b: **UFS(cust) 루트로 XNU 부팅 + PID 1** ✅
+
+- cust에 64 MiB HFS+ 시험 루트를 씀 (`fastboot flash cust root.img`). shim 덤프로 검증: 앞 64 MiB가 `root.img`와 일치, 나머지 1,984 MiB는 원본 백업과 일치
+- 1차 부팅: `sweet_ufs_rootdev` → `sweet_usb_probe+0x6c`에서 GCC `USB30_PRIM_GDSCR` 읽기 → external abort
+  - → XNU 기본 cmdline에 `sweetusb=0` 추가
+- 2차 부팅 (`… sweetusb=0 rd=ufsroot0 ufsroot=cust`, 로컬 커널 1000–1005):
+  - **`SWEET UFS: START STOP UNIT (ACTIVE) to device W-LUN: 0`** (1005 동작)
+  - **`SWEET UFS: "cust" on LUN 0: first block 0x36a00, 2048 MiB, read-only, DMA at 0x844fec000`** → GPT 탐색 정상, **4 GiB 위 DMA 정상** (64-bit addressing)
+  - `SWEET KEYS/TOUCH: disabled` → **`BSD root: ufsroot0`** → **`hfs: mounted SweetRoot`** → `root volume is not authenticated (error 25); continuing unsealed`
+  - `load_init_program: /sbin/launchd` → **`*** SWEET userspace: init running as PID 1 ***`** → heartbeat 반복
+- 결론: **marble의 내장 UFS에서 HFS+ 루트를 마운트하고 유저 공간을 실행함.** 저장장치 경로 확보 (쓰기는 아직 시험 안 함)
