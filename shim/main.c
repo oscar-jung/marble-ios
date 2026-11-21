@@ -24,6 +24,8 @@
  *   shim.mdp=1     (page 0) read the MDP source pipes to find the scanout
  *                  surface; can hang the bus if MDP clocks are gated
  *   shim.fault=1   take a data abort after page 0 (tests the panic screen)
+ *   shim.usb=1     start the USB log channel first (tools/usblog.py on the
+ *                  host); everything printed is also sent over USB
  * The older m0.* spellings are accepted too.
  */
 #include <stdint.h>
@@ -71,7 +73,7 @@ void delay_ms(uint64_t ms)
 	uint64_t end = ticks() + rsr("cntfrq_el0") / 1000 * ms;
 
 	while (ticks() < end)
-		;
+		usb_poll();
 }
 
 const char *cpu_part_name(uint64_t midr)
@@ -134,7 +136,7 @@ static void __attribute__((noreturn)) finish(int stay)
 	if (stay) {
 		con_printf("HOLD: LONG-PRESS POWER TO EXIT");
 		for (;;)
-			__asm__ volatile("wfe");
+			usb_poll();	/* keeps the USB log channel served */
 	}
 	con_printf("RESET IN %u S - HOLD VOL- FOR FASTBOOT", RESET_DELAY_S);
 	delay_ms((uint64_t)RESET_DELAY_S * 1000);
@@ -421,6 +423,13 @@ void shim_main(uintptr_t fdt, uint64_t el, uintptr_t image_base)
 
 	stage = "fdt";
 	args = fdt_prop(fdt, "chosen", "bootargs", &args_len);
+
+	if (arg_flag("shim.usb=1")) {
+		page_begin(7, "USB LOG CHANNEL", 3);
+		if (usb_start() == 0)
+			usb_wait_host(20000);
+		delay_ms(3000);
+	}
 
 	int only = arg_digit("shim.page=");
 	uint64_t rd_lo = 0, rd_hi = 0;

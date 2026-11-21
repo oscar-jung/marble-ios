@@ -78,6 +78,9 @@ static struct ucd ucd __attribute__((aligned(128)));
 static uint8_t data[2 * BLOCK] __attribute__((aligned(4096)));
 static uint8_t ents[32 * BLOCK] __attribute__((aligned(4096)));	/* up to 1024 GPT entries */
 
+/* Sense data of the last CHECK CONDITION (response UPIU: length at 30, fixed-format data at 32). */
+static uint8_t sense_key, sense_asc, sense_ascq, sense_len;
+
 static void zero(void *p, unsigned n)
 {
 	volatile uint8_t *b = p;
@@ -150,6 +153,13 @@ static uint32_t scsi(uint8_t lun, const uint8_t *cdb, unsigned cdb_len, void *bu
 	dsb();
 	*ocs_out = utrl[0].dw2 & 0xff;
 	*status_out = ucd.resp[7];
+	sense_len = ucd.resp[31];
+	sense_key = sense_asc = sense_ascq = 0;
+	if (ucd.resp[7] == 2 && sense_len >= 14) {
+		sense_key = ucd.resp[32 + 2] & 0xf;
+		sense_asc = ucd.resp[32 + 12];
+		sense_ascq = ucd.resp[32 + 13];
+	}
 	if (*ocs_out)
 		return 2;
 	if (ucd.resp[0] != 0x21)		/* RESPONSE UPIU */
@@ -270,7 +280,25 @@ void page_ufs(void)
 	static const uint8_t tur[6] = { 0 };
 	for (int i = 0; i < 3 && rc; i++) {	/* first command may see a unit attention */
 		rc = scsi(0, tur, sizeof(tur), 0, 0, &ocs, &st);
-		con_printf("TUR LUN0 RC %u OCS %X STATUS %X", rc, ocs, st);
+		con_printf("TUR LUN0 RC %u OCS %X STATUS %X SENSE LEN %u KEY %X ASC %02X ASCQ %02X", rc, ocs, st,
+			   sense_len, sense_key, sense_asc, sense_ascq);
+	}
+	if (rc) {
+		/*
+		 * Still failing: wake the device. START STOP UNIT to the UFS Device
+		 * well-known LUN (0xD0) with POWER CONDITION = ACTIVE (1). It only
+		 * changes the device power mode; no data is written.
+		 */
+		stage = "ufs ssu";
+		static const uint8_t ssu[6] = { 0x1b, 0, 0, 0, 0x10, 0 };
+		uint32_t r2 = scsi(0xd0, ssu, sizeof(ssu), 0, 0, &ocs, &st);
+		con_printf("SSU W-LUN D0 ACTIVE: RC %u OCS %X STATUS %X KEY %X ASC %02X ASCQ %02X", r2, ocs, st,
+			   sense_key, sense_asc, sense_ascq);
+		for (int i = 0; i < 3 && rc; i++) {
+			rc = scsi(0, tur, sizeof(tur), 0, 0, &ocs, &st);
+			con_printf("TUR LUN0 RC %u OCS %X STATUS %X KEY %X ASC %02X ASCQ %02X", rc, ocs, st,
+				   sense_key, sense_asc, sense_ascq);
+		}
 	}
 
 	stage = "ufs capacity";
@@ -278,7 +306,8 @@ void page_ufs(void)
 	for (uint8_t lun = 0; lun < MAX_LUN; lun++) {
 		rc = scsi(lun, cap10, sizeof(cap10), data, 8, &ocs, &st);
 		if (rc)
-			con_printf("LUN%u: RC %u OCS %X STATUS %X", lun, rc, ocs, st);
+			con_printf("LUN%u: RC %u OCS %X STATUS %X KEY %X ASC %02X ASCQ %02X", lun, rc, ocs, st,
+				   sense_key, sense_asc, sense_ascq);
 		else
 			con_printf("LUN%u: %8u BLOCKS OF %u = %lu MIB", lun, be32p(data) + 1, be32p(data + 4),
 				   ((uint64_t)be32p(data) + 1) * be32p(data + 4) >> 20);

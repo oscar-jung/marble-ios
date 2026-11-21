@@ -177,8 +177,20 @@ static int full(void)
 	return cur_y + CELL_H > fb.height - fb.height / 12;
 }
 
+/* Weak defaults; usb.c provides the real ones in the shim (tk has no USB). */
+__attribute__((weak)) void con_tee(char c)
+{
+	(void)c;
+}
+
+__attribute__((weak)) void usb_poll(void)
+{
+}
+
 static uint32_t draw_str(uint32_t col, const char *s)
 {
+	for (const char *t = s; t && *t; t++)
+		con_tee(*t);
 	if (full())
 		return col;
 	for (; s && *s; s++, col++)
@@ -188,6 +200,8 @@ static uint32_t draw_str(uint32_t col, const char *s)
 
 static void newline(void)
 {
+	con_tee('\n');
+	usb_poll();
 	if (full())
 		dropped++;
 	else
@@ -203,6 +217,7 @@ void con_line(const char *s)
 void con_kv(const char *key, const char *val)
 {
 	draw_str(0, key);
+	con_tee(' ');
 	draw_str(KEY_COLS, val);
 	newline();
 }

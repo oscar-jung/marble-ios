@@ -26,6 +26,9 @@
 #define PAGE_S			25	/* seconds each page stays up (time to photograph it) */
 #define LOADER_WAIT_S		15	/* page 5 stays up this long before the jump */
 #define PTIMER_TRAPS		1	/* M3, 2026-11-21: Gunyah traps CNTP_* with UNDEF */
+/* USB log channel (shim.usb=1): DWC3 core and Qualcomm wrapper (sm8450 layout). GCC aborts from EL1. */
+#define USB_DWC3_BASE		0x0a600000UL
+#define USB_QSCRATCH_BASE	0x0a6f8800UL
 /* UFSHCI (cape.dtsi ufshc@1d84000), page 6 read-only probe */
 #define UFS_BASE		0x01d84000UL
 /* GICv3 (cape.dtsi interrupt-controller@17100000) */

@@ -490,3 +490,14 @@ ios-sweet 패치를 적용한 트리(`xnu-8796.141.3` + 0001–0081 + 1000)를 �
 - **하지만 모든 명령이 SCSI `CHECK CONDITION`(status 2)**: TUR 3회, LUN0–7 READ CAPACITY, LUN0 READ(10) 모두
   - unit attention이라면 첫 명령 뒤에 풀려야 함. 계속 유지되므로 장치가 **NOT READY 상태**일 가능성이 큼 (⚠️ 추정: ABL이 핸드오프 전에 START STOP UNIT으로 장치를 재웠거나, 전원 모드가 바뀌었을 수 있음)
   - 다음: 응답 UPIU의 sense data(key/ASC/ASCQ)를 표시하고, 원인이 NOT READY이면 UFS Device W-LUN(0xD0)에 START STOP UNIT(START=1, power condition ACTIVE)을 보냄. 이 명령은 전원 상태만 바꾸고 데이터는 쓰지 않음
+
+### 2026-11-21 — USB 로그 채널 ✅ (사진 대신 텍스트)
+
+- `shim/usb.c` (ios-sweet XNU `sweet_usb.c`를 가져와 고친 것, MIT): ABL이 켜 둔 DWC3를 soft reset → 이벤트 버퍼, EP0 → QSCRATCH VBUS override → run. polling 방식
+  - 장치: vendor 인터페이스 1개 + bulk IN 0x81, `1209:0001 "marble shim log"`. 콘솔이 출력하는 모든 글자를 512 KiB 링 버퍼에 쌓아 전송
+- 첫 시도는 `STAGE usb gcc`, `FAR 0x10F004`, `ESR 0x96000010`에서 panic
+  - → **SM7475에서는 GCC(USB30_PRIM GDSCR)를 EL1에서 읽을 수 없음** (sweet와 다름). GCC 검사를 빼고 ABL 상태를 신뢰하도록 바꿈
+- 두 번째 시도 ✅: `GSNPSID 33313130`(DWC3 3.11a), `DCTL 10F00000`, `DSTS 00D3B824` → `RUNNING, DSTS 00820001` → **`HOST CONNECTED (EVENTS 67 RESETS 1 SETUPS 12)`**. Mac의 `tools/usblog.py`로 전체 로그를 텍스트로 받음
+- 자동화:
+  - 벤더 요청 `0x40/'R'` → shim이 PSCI reset (`usblog.py --reboot`)
+  - `tools/phone-run.sh IMAGE NAME QUIET`: 리셋 → (Android) `adb reboot bootloader` → `fastboot boot` → USB 로그 수신까지 한 번에 처리

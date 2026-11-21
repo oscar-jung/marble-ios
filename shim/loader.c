@@ -271,6 +271,7 @@ void loader_page(uintptr_t fdt, const struct fb *fb, uintptr_t p, uintptr_t rd_l
 	delay_ms((uint64_t)wait_s * 1000);
 
 	stage = "loader jump";
+	usb_stop();
 	gic_quiesce();
 	__asm__ volatile("msr daifset, #0xf; dsb sy; ic iallu; dsb sy; isb" ::: "memory");
 	((xnu_entry_t)entry_pa)(ba_pa);

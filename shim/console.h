@@ -36,3 +36,5 @@ uint32_t con_dropped(void);
 void con_printf(const char *fmt, ...) __attribute__((format(printf, 1, 2)));
 /* Text of len bytes at s (may be Device memory), wrapped to the screen width. */
 void con_wrap(uintptr_t s, uint32_t len, uint32_t indent);
+/* Every character the console prints, as text (usb.c sends it to the host). */
+void con_tee(char c);

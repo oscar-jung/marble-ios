@@ -40,6 +40,13 @@ void gic_irq(void);
 /* Interrupts off at the GIC and the core, timers stopped: state handed to the next stage. */
 void gic_quiesce(void);
 
+/* usb.c: log channel to the host (tools/usblog.py) */
+int usb_start(void);
+void usb_wait_host(uint32_t ms);
+void usb_poll(void);
+void usb_stop(void);
+int usb_configured(void);
+
 /* ufs.c: page 6, read-only UFS probe */
 void page_ufs(void);
 
