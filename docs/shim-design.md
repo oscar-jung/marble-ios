@@ -443,3 +443,15 @@ ios-sweet 패치를 적용한 트리(`xnu-8796.141.3` + 0001–0081 + 1000)를 �
   - build.sh의 "kernel.development가 이미 있으면 건너뜀" 조건을 끄도록 처리함
   - `pe_fiq.c` 하나를 바꾼 뒤 **12.2초**에 끝남 (CI는 약 10분)
 - 앞으로의 흐름: 로컬에서 `--quick`으로 반복 → 폰 테스트. CI는 깨끗한 환경의 기준 빌드와 공개 아티팩트 용도로 유지
+
+### 2026-11-21 — M5b-2 실기기 #2 (1004): **XNU가 marble에서 루트 마운트 대기까지 부팅** ✅
+
+- 이미지: CI run 44873021550 marble 커널 + `marble-shim-xnu-v4.img`, cmdline `debug=0xc serial=3 cpus=1 keepsyms=1 sweettouch=0 sweetkeys=0`
+- 화면 (sweet_early → fbcon, `0xb8000000`): QEMU와 같은 순서로 진행함
+  - `iBoot version: sweet-shim`, platform expert, AMFI, AKS, WDT, IOSurface, HID 버튼/터치(드라이버 비활성 상태로 등록만), BATTERY static fallback
+  - `SWEET FB: AppleCLCD 1080x2400 stride 4320 at 0xb8000000`
+  - **`SWEET CPU: cpu=0 mpidr=0x0 came alive; SGI1 OK`**, `1/1 CPUs initialized, SGI1 verified` → Gunyah vGIC에서 SGI와 vtimer 인터럽트 경로가 동작함 (1002 stride, 1003 no-CNTP, 1004 ISV-safe MMIO가 함께 효과를 냄)
+  - MAC/AMFI/Sandbox, HFS, mbuf(`96 MB total pool`, QEMU는 64 MB → 5 GiB RAM 인식), dlil/ifnet(lo0, gif0, stf0)
+  - **`Waiting on <dict>… IOProviderClass IOMedia … Apple_HFS`**: 루트 디바이스 대기. UFS 노드를 빼 두었으므로 예상된 정지점
+  - 새로 보인 줄: `Failed to write boot-picker-bringup-reason to NVRAM` (NVRAM이 없어서 생김, 무해)
+- 결론: **SM7475 + Gunyah 위에서 XNU 커널 초기화가 끝까지 됨.** 남은 일은 루트 파일시스템과 그 이후 (M5b-3)
