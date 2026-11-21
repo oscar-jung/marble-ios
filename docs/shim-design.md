@@ -501,3 +501,30 @@ ios-sweet 패치를 적용한 트리(`xnu-8796.141.3` + 0001–0081 + 1000)를 �
 - 자동화:
   - 벤더 요청 `0x40/'R'` → shim이 PSCI reset (`usblog.py --reboot`)
   - `tools/phone-run.sh IMAGE NAME QUIET`: 리셋 → (Android) `adb reboot bootloader` → `fastboot boot` → USB 로그 수신까지 한 번에 처리
+
+### 2026-11-21 — UFS 프로브 #2 (USB 로그, `build-local/logs/ufs-sense.log`) ✅
+
+- TUR ×3: `STATUS 2`인데 **sense data 길이가 0** (응답 UPIU에 sense가 없음)
+- **`SSU W-LUN D0 ACTIVE: RC 0`** → 바로 다음 **TUR: RC 0 STATUS 0** ✅
+  - → 원인: **ABL이 핸드오프 전에 UFS 장치를 저전력(sleep) 상태로 내림**. START STOP UNIT(power condition ACTIVE)로 깨우면 정상 동작함. 데이터 쓰기는 없음
+  - → XNU `sweet_ufs.c`에도 같은 깨우기 단계가 필요함 (sweet에서는 필요 없었음 → marble 패치 대상)
+- LUN 용량 (4 KiB 블록):
+  - LUN0 61,880,320 블록 = **241,720 MiB (256 GB 모델)**
+  - LUN1/2 16 MiB, LUN3 32 MiB, LUN4 2,176 MiB, LUN5 64 MiB
+  - LUN6/7 없음 (CHECK CONDITION)
+- LUN0 GPT: 파티션 33개 (64 MiB 이상만 표시)
+
+| 이름 | 시작 LBA | 크기 | 내용 |
+|---|---|---|---|
+| metadata | `0x4000` | 64 MiB | |
+| minidump | `0x10A00` | 96 MiB | |
+| rawdump | `0x16A00` | 300 MiB | |
+| rescue | `0x2EA00` | 128 MiB | |
+| **cust** | `0x36A00` | **2,048 MiB** | **EXT4** |
+| super | `0xB6A00` | 9,216 MiB | dynamic partitions (Android 시스템) |
+| **userdata** | `0x2F6A00` | **229,581 MiB** | OTHER (메타데이터 암호화로 보임 ⚠️) |
+
+- iOS 루트 후보:
+  - (a) `userdata`: ios-sweet 방식. 공간은 충분하지만 **Android 데이터가 지워지고**, Android를 다시 쓰려면 포맷이 필요함
+  - (b) `cust`: 2 GiB로는 iOS 16 루트 전체(수 GB)에 부족함. 축소한 루트나 시험용으로만 가능
+  - (c) GPT를 고쳐 `userdata`를 줄이고 새 파티션을 만드는 방법: 공간 문제는 없지만 파티션 테이블 수정은 위험도가 가장 큼
