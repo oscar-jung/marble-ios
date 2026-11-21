@@ -2,8 +2,12 @@
 # marble patches (xnu/marble-patches), on a GitHub macOS runner.
 #
 # Adapted from ios-sweet's .github/workflows/xnu.yml (MIT, dipa-studio).
-# Why a runner and not a local Mac: xnu-8796 needs Xcode 15.x's iig (Xcode 16+
-# emits IORPC.kernelContent, which this xnu lacks) and the macOS 13.5 KDK.
+# xnu-8796 was built upstream with Xcode 15.x, whose iig matches its IORPC ABI.
+# GitHub no longer offers macos-14 (2026-11: "macos-14-arm64-us-default is not
+# supported") and no hosted image carries Xcode 15, so this builds on macos-15
+# with Xcode 16.x plus xnu/marble-patches/1000-xcode16-iig-kernelcontent.patch,
+# which adds the IORPC.kernelContent field Xcode 16's iig emits. The KDK is
+# fetched by build.sh from dortania/KdkSupportPkg.
 name: xnu
 
 on:
@@ -21,6 +25,9 @@ on:
       keep_going:
         description: make -k (collect all compile errors in one run)
         default: "true"
+      xcode:
+        description: Xcode on the runner (/Applications/Xcode_<x>.app)
+        default: "16.4"
   push:
     branches: [main]
     paths:
@@ -38,11 +45,11 @@ env:
   MACOS_VERSION: ${{ inputs.macos_version || '13.5' }}
   KERNEL_CONFIG: ${{ inputs.kernel_config || 'DEVELOPMENT' }}
   MACHINE_CONFIG: ${{ inputs.machine_config || 'SWEET' }}
+  XCODE: ${{ inputs.xcode || '16.4' }}
 
 jobs:
   build:
-    # macos-14 ships Xcode 15.x, whose iig matches the xnu-8796 IORPC ABI.
-    runs-on: macos-14
+    runs-on: macos-15
     timeout-minutes: 150
     steps:
       - uses: actions/checkout@v4
@@ -69,7 +76,7 @@ jobs:
           sudo chmod +x /usr/local/bin/xcodes
           sw_vers
           ls -d /Applications/Xcode*.app
-          XC=$(ls -d /Applications/Xcode_15*.app | sort -V | head -1)
+          XC=/Applications/Xcode_${XCODE}.app
           echo "DEVELOPER_DIR=$XC/Contents/Developer" >> "$GITHUB_ENV"
           sudo xcode-select -s "$XC"
           xcodebuild -version
