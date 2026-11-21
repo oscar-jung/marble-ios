@@ -27,14 +27,14 @@ except ImportError:
     sys.exit("pyusb missing: pip install pyusb (and brew install libusb)")
 
 VID, PID = 0x1209, 0x0001
-PRODUCT = "marble shim log"
+PRODUCT = "marble"  # prefix: "marble shim log" (shim), "marble xnu log" (XNU, patch 1006)
 EP_IN = 0x81
 
 
 def find():
     for dev in usb.core.find(find_all=True, idVendor=VID, idProduct=PID) or []:
         try:
-            if usb.util.get_string(dev, dev.iProduct) == PRODUCT:
+            if (usb.util.get_string(dev, dev.iProduct) or "").startswith(PRODUCT):
                 return dev
         except (usb.core.USBError, ValueError):
             continue
@@ -83,6 +83,7 @@ def main() -> None:
     root = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
     ap.add_argument("--out", default=os.path.join(root, "build-local", "logs", f"usb-{stamp}.log"))
     ap.add_argument("--once", action="store_true")
+    ap.add_argument("--sessions", type=int, default=0, help="exit after N sessions (0 = never)")
     ap.add_argument("--quiet-secs", type=float, default=0)
     ap.add_argument("--wait-secs", type=float, default=0, help="give up if no device appears (0 = forever)")
     ap.add_argument("--reboot", action="store_true", help="send the vendor reboot request and exit")
@@ -100,6 +101,7 @@ def main() -> None:
     os.makedirs(os.path.dirname(a.out), exist_ok=True)
     sys.stderr.write(f"[usblog] waiting for {VID:04x}:{PID:04x} '{PRODUCT}', log -> {a.out}\n")
     start = time.time()
+    n_sess = 0
     with open(a.out, "a") as out:
         while True:
             dev = find()
@@ -112,8 +114,9 @@ def main() -> None:
             sys.stderr.write(f"[usblog] connected ({dev.bus}:{dev.address})\n")
             out.write(f"\n===== session {datetime.datetime.now().isoformat()} =====\n")
             n = session(dev, out, a.quiet_secs)
+            n_sess += 1
             sys.stderr.write(f"[usblog] {n} bytes\n")
-            if a.once:
+            if a.once or (a.sessions and n_sess >= a.sessions):
                 return
             time.sleep(0.5)
 

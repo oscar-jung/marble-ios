@@ -550,3 +550,11 @@ ios-sweet 패치를 적용한 트리(`xnu-8796.141.3` + 0001–0081 + 1000)를 �
   - `SWEET KEYS/TOUCH: disabled` → **`BSD root: ufsroot0`** → **`hfs: mounted SweetRoot`** → `root volume is not authenticated (error 25); continuing unsealed`
   - `load_init_program: /sbin/launchd` → **`*** SWEET userspace: init running as PID 1 ***`** → heartbeat 반복
 - 결론: **marble의 내장 UFS에서 HFS+ 루트를 마운트하고 유저 공간을 실행함.** 저장장치 경로 확보 (쓰기는 아직 시험 안 함)
+
+### 2026-11-21 — XNU USB 라이브 로그 ✅ (patch 1006, `build-local/logs/xnu-usblog-1.log`)
+
+- XNU 기본 cmdline `sweetusb=3`: shim이 핸드오프 직전 USB를 끊고, XNU가 `IOFindBSDRoot` 앞에서 같은 DWC3를 다시 올려 "marble xnu log"로 재접속
+- `SESSIONS=2 tools/phone-run.sh …`: 세션 1 = shim 로그, 세션 2 = XNU 로그. XNU 링 버퍼를 부팅 처음부터 전송 → 첫 줄 `Darwin Kernel Version 22.6.0 … xnu-8796.141.3`부터 UFS SSU, `BSD root: ufsroot0`, PID 1 heartbeat, SMP 샘플까지 텍스트로 수신
+- `tools/usblog.py --reboot`이 XNU에서도 동작 (vendor 'R' → PSCI SYSTEM_RESET) → Android 18초 만에 복귀. **사진 없이 완전 무인 사이클 가능**
+- 남은 것: 패닉 시점 로그 (패닉 경로에서 USB 스레드가 멈춤 → 동기 flush 필요)
+

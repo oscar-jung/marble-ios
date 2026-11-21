@@ -42,7 +42,7 @@ done
 if [ -n "${RECEIVER:-}" ]; then
 	"$PY" -u $RECEIVER &
 else
-	"$PY" -u "$ROOT/tools/usblog.py" --once --quiet-secs "$QUIET" --wait-secs 90 --out "$LOG" &
+	"$PY" -u "$ROOT/tools/usblog.py" --sessions "${SESSIONS:-1}" --quiet-secs "$QUIET" --wait-secs 90 --out "$LOG" &
 fi
 RX=$!
 sleep 1
